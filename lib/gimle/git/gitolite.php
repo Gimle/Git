@@ -2,7 +2,7 @@
 declare(strict_types=1);
 namespace gimle\git;
 
-use \gimle\Config;
+use \gimle\{Exception, Config};
 use \gimle\xml\SimpleXmlElement;
 
 class Gitolite

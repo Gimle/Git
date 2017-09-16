@@ -2,6 +2,7 @@
 declare(strict_types=1);
 namespace gimle\git;
 
+use \gimle\Exception;
 use function \gimle\exec;
 
 class Git
