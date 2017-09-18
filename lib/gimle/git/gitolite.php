@@ -4,6 +4,7 @@ namespace gimle\git;
 
 use \gimle\{Exception, Config};
 use \gimle\xml\SimpleXmlElement;
+use function \gimle\exec;
 
 class Gitolite
 {
@@ -24,6 +25,13 @@ class Gitolite
 	private $sshKeyCache = null;
 
 	/**
+	 * Holds the found keys information so they don't need to be searched from disk again.
+	 *
+	 * @var ?string
+	 */
+	 private $sshKeyCacheAnalyzed = null;
+
+	/**
 	 * Create the Gitolite object
 	 */
 	private function __construct ()
@@ -38,7 +46,7 @@ class Gitolite
 	 * @param string $title The title of the key.
 	 * @return ?string The public key.
 	 */
-	public function getSshKey ($user, $title): ?string
+	public function getSshKey ($user, $title): ?array
 	{
 		$this->getSshKeys($user);
 		if (isset($this->sshKeyCache[$title])) {
@@ -51,28 +59,69 @@ class Gitolite
 	 * Retrieve all public keys for the given user.
 	 *
 	 * @param string $user The username.
+	 * @param bool $analyse Provide aditional information about the key.
 	 * @return array The public keys.
 	 */
-	public function getSshKeys ($user): array
+	public function getSshKeys ($user, $analyze = false): array
 	{
-		if ($this->sshKeyCache !== null) {
-			return $this->sshKeyCache;
-		}
-		$return = [];
-		if (file_exists(Config::get('git.gitolite-admin.path') . 'keydir/' . $user)) {
-			foreach (new \DirectoryIterator(Config::get('git.gitolite-admin.path') . 'keydir/' . $user) as $fileInfo) {
-				$fileName = $fileInfo->getFilename();
-				if (substr($fileName, 0, 1) === '.') {
-					continue;
-				}
-				$fullName = Config::get('git.gitolite-admin.path') . 'keydir/' . $user . '/' . $fileName . '/' . $user . '.pub';
-				$return[$fileName] = trim(file_get_contents($fullName));
+		if ($analyze === false) {
+			if ($this->sshKeyCache !== null) {
+				return $this->sshKeyCache;
 			}
+			else {
+				$return = [];
+				if (file_exists(Config::get('git.gitolite-admin.path') . 'keydir/' . $user)) {
+					foreach (new \DirectoryIterator(Config::get('git.gitolite-admin.path') . 'keydir/' . $user) as $fileInfo) {
+						$fileName = $fileInfo->getFilename();
+						if (substr($fileName, 0, 1) === '.') {
+							continue;
+						}
+						$localName = 'keydir/' . $user . '/' . $fileName . '/' . $user . '.pub';
+						$fullName = Config::get('git.gitolite-admin.path') . $localName;
+						$return[$fileName] = [
+							'file' => $localName,
+							'key' => trim(file_get_contents($fullName)),
+						];
+					}
+				}
+			}
+			$this->sshKeyCache = $return;
+			return $return;
 		}
 
-		$this->sshKeyCache = $return;
+		if ($this->sshKeyCacheAnalyzed !== null) {
+			return $this->sshKeyCacheAnalyzed;
+		}
 
-		return $return;
+		$this->sshKeyCacheAnalyzed = $this->getSshKeys($user);
+
+		foreach ($this->sshKeyCacheAnalyzed as $title => $info) {
+			try {
+				$this->sshKeyCacheAnalyzed[$title]['fingerprint'] = $this->sshKeyInfo(Config::get('git.gitolite-admin.path') . $info['file']);
+			}
+			catch (Exception $e) {
+				$this->sshKeyCacheAnalyzed[$title]['fingerprint'] = null;
+			}
+
+			$this->sshKeyCacheAnalyzed[$title]['datetime'] = $this->git->lastCreationDate($info['file']);
+		}
+		return $this->sshKeyCacheAnalyzed;
+	}
+
+	/**
+	 * Gather extra information about the ssh public key.
+	 *
+	 * @throws gimle\Exception If there is an error getting key information.
+	 * @param string $fileName The filename of the key, relative to the gitolite repository root.
+	 * @return string.
+	 */
+	public function sshKeyInfo (string $fileName): string
+	{
+		$result = exec('ssh-keygen -lf ' . escapeshellarg($fileName));
+		if ($result['return'] !== 0) {
+			throw new Exception($result['sterr'][0], $result['return']);
+		}
+		return $result['stout'][0];
 	}
 
 	/**
@@ -101,10 +150,12 @@ class Gitolite
 			throw $e;
 		}
 
-		if (in_array($key, $usedKeys)) {
-			$e->setMessage('Key in use.');
-			$e->set('key', $key);
-			throw $e;
+		foreach ($usedKeys as $usedKey) {
+			if ($usedKey['key'] === $key) {
+				$e->setMessage('Key in use.');
+				$e->set('key', $key);
+				throw $e;
+			}
 		}
 
 		$isClean = $this->git->isClean();
@@ -128,11 +179,11 @@ class Gitolite
 		}
 		$add = $this->git->add($dir . $user . '.pub');
 		if ($add['result']['return'] !== 0) {
-			$e->setMessage('Error while adding file to git.');
+			$e->setMessage('Error while adding the key to git.');
 			$e->set('result', $add);
 			throw $e;
 		}
-		$commit = $this->git->commit('Added new key for ' . $user . '@' . $title);
+		$commit = $this->git->commit('Added new key: "' . $title . '" for user: "' . $user . '"');
 		if ($commit['result']['return'] !== 0) {
 			$e->setMessage('Error while comitting to git.');
 			$e->set('result', $commit);
@@ -144,6 +195,47 @@ class Gitolite
 			$e->set('result', $push);
 			throw $e;
 		}
+	}
+
+	/**
+	 * Delete a public key from the given user.
+	 *
+	 * @throws gimle\Exception If the key can not be deleted.
+	 * @param string $user The username.
+	 * @param string $title The title of the key.
+	 * @return void.
+	 */
+	public function deleteSshKey ($user, $title): void
+	{
+		$e = new Exception('');
+		$e->set('user', $user);
+		$e->set('title', $title);
+
+		$this->getSshKeys($user);
+		if (isset($this->sshKeyCache[$title])) {
+			$remove = $this->git->rm($this->sshKeyCache[$title]['file']);
+			if ($remove['result']['return'] !== 0) {
+				$e->setMessage('Error while removing the key from git.');
+				$e->set('result', $add);
+				throw $e;
+			}
+			$commit = $this->git->commit('Removed key: "' . $title . '" for user: "' . $user . '"');
+			if ($commit['result']['return'] !== 0) {
+				$e->setMessage('Error while comitting to git.');
+				$e->set('result', $commit);
+				throw $e;
+			}
+			$push = $this->git->push();
+			if ($push['result']['return'] !== 0) {
+				$e->setMessage('Error while pushing to git.');
+				$e->set('result', $push);
+				throw $e;
+			}
+			return;
+		}
+		$e->setMessage('Key not found.');
+		$e->set('result', $push);
+		throw $e;
 	}
 
 	/**
