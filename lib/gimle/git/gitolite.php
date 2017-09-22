@@ -3,7 +3,6 @@ declare(strict_types=1);
 namespace gimle\git;
 
 use \gimle\{Exception, Config};
-use \gimle\xml\SimpleXmlElement;
 use function \gimle\exec;
 
 class Gitolite
@@ -270,9 +269,10 @@ class Gitolite
 			if (substr($linestr, 0, 1) === '#') {
 				if ($inRepo === false) {
 					$comment = $sxml->addChild('comment');
+					$comment[0] = trim(substr($line, 1));
 				}
 				else {
-					$cacheComments[] = trim(substr($linestr, 1));
+					$cacheComments[] = trim(substr($line, 1));
 				}
 				continue;
 			}
@@ -285,9 +285,13 @@ class Gitolite
 				$group = $sxml->addChild('group');
 				$group['name'] = trim($linestr[0]);
 				$linestr[1] = $splitComment($linestr[1]);
-				$group[0] = $linestr[1]['text'];
 				if ($linestr[1]['comment'] !== null) {
 					$group['comment'] = $linestr[1]['comment'];
+				}
+				$names = explode(' ', $linestr[1]['text']);
+				foreach ($names as $name) {
+					$groupName = $group->addChild('name');
+					$groupName[0] = $name;
 				}
 				continue;
 			}
@@ -303,9 +307,13 @@ class Gitolite
 				$inRepo = true;
 				$repo = $sxml->addChild('repo');
 				$linestr = $splitComment(substr($linestr, 5));
-				$repo['name'] = $linestr['text'];
 				if ($linestr['comment'] !== null) {
 					$repo['comment'] = $linestr['comment'];
+				}
+				$names = explode(' ', $linestr['text']);
+				foreach ($names as $name) {
+					$repoName = $repo->addChild('name');
+					$repoName[0] = $name;
 				}
 				continue;
 			}
@@ -381,19 +389,25 @@ class Gitolite
 			$tagName = (string) $element->getName();
 
 			if ($tagName === 'group') {
-				$return .= (string) $element['name'] . ' = ' . (string) $element;
+				$return .= (string) $element['name'] . ' =';
+				foreach ($element->xpath('./name') as $sub) {
+					$return .= ' ' . (string) $sub;
+				}
 				if ((bool) $element['comment']) {
 					$return .= ' # ' . (string) $element['comment'];
 				}
 				$return .= "\n";
 			}
 			elseif ($tagName === 'repo') {
-				$return .= 'repo ' . (string) $element['name'];
+				$return .= 'repo';
+				foreach ($element->xpath('./name') as $sub) {
+					$return .= ' ' . (string) $sub;
+				}
 				if ((bool) $element['comment']) {
 					$return .= ' # ' . (string) $element['comment'];
 				}
 				$return .= "\n";
-				foreach ($element->xpath('./*') as $sub) {
+				foreach ($element->xpath('./*[not(self::name)]') as $sub) {
 					$subName = (string) $sub->getName();
 					if ($subName === 'access') {
 						$return .= '	' . (string) $sub['perm'];
@@ -411,29 +425,31 @@ class Gitolite
 						$return .= "\n";
 					}
 					elseif ($subName === 'comment') {
-						$return .= '	# ' . (string) $sub[0] . "\n";
+						$return .= '	# ' . (string) $sub . "\n";
 					}
 					elseif ($subName === 'option') {
-						$return .= '	option ' . (string) $sub['name'] . ' = ' . (string) $sub[0];
+						$return .= '	option ' . (string) $sub['name'] . ' = ' . (string) $sub;
 						if ((bool) $sub['comment']) {
 							$return .= ' # ' . (string) $sub['comment'];
 						}
 						$return .= "\n";
 					}
 					elseif ($subName === 'config') {
-						$return .= '	config ' . (string) $sub['name'] . ' = ' . (string) $sub[0];
+						$return .= '	config ' . (string) $sub['name'] . ' = ' . (string) $sub;
 						if ((bool) $sub['comment']) {
 							$return .= ' # ' . (string) $sub['comment'];
 						}
 						$return .= "\n";
 					}
 					else {
-						throw new Exception('Error converting config (1).');
+						$e = new Exception('Error converting config (1).');
+						$e->set('subName', $subName);
+						throw $e;
 					}
 				}
 			}
 			elseif ($tagName === 'comment') {
-				$return .= '# ' . (string) $element[0];
+				$return .= '# ' . (string) $element;
 			}
 			else {
 				throw new Exception('Error converting config (2).');
