@@ -114,7 +114,7 @@ class Git
 	 *
 	 * @return string
 	 */
-	private static function generateRandomString (): string
+	public static function generateRandomString (): string
 	{
 		$characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 		$charactersLength = strlen($characters);
