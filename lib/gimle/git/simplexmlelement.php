@@ -61,6 +61,7 @@ class SimpleXmlElement extends \gimle\xml\SimpleXmlElement
 		if ($includeGroupChecks) {
 			$repoGroups = $this->getGroups($repo);
 			$userGroups = $this->getGroups($user);
+			$repoGroups[] = '@all';
 			$userGroups[] = '@all';
 
 			foreach ($repoGroups as $repoGroup) {
