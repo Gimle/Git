@@ -68,6 +68,12 @@ trait Commands
 		return $this->gitexec($exec);
 	}
 
+	public function log ()
+	{
+		$exec = 'log';
+		return $this->gitexec($exec);
+	}
+
 	/**
 	 * Return the last creation date for a file.
 	 *
