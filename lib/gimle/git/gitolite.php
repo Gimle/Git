@@ -59,7 +59,7 @@ class Gitolite
 	 * @param string $title The title of the key.
 	 * @return ?string The public key.
 	 */
-	public function getSshKey ($user, $title): ?array
+	public function getSshKey (string $user, string $title): ?array
 	{
 		$this->getSshKeys($user);
 		if (isset($this->sshKeyCache[$title])) {
@@ -100,7 +100,7 @@ class Gitolite
 	 * @param string $cmd Command to execute.
 	 * @return array
 	 */
-	 private function exec ($cmd): array
+	 private function exec (string $cmd): array
 	 {
 		 $randString = Git::generateRandomString();
 		 while (strpos($cmd, $randString) !== false) {
@@ -119,7 +119,7 @@ class Gitolite
 	 * @param bool $analyse Provide aditional information about the key.
 	 * @return array The public keys.
 	 */
-	public function getSshKeys ($user, $analyze = false): array
+	public function getSshKeys (string $user, bool $analyze = false): array
 	{
 		if ($analyze === false) {
 			if ($this->sshKeyCache !== null) {
@@ -190,7 +190,7 @@ class Gitolite
 	 * @param string $title The title of the key.
 	 * @return void.
 	 */
-	public function addSshKey ($key, $user, $title): void
+	public function addSshKey (string $key, string $user, string $title): void
 	{
 		$this->sshKeyCache = null;
 		$key = trim($key);
@@ -262,7 +262,7 @@ class Gitolite
 	 * @param string $title The title of the key.
 	 * @return void.
 	 */
-	public function deleteSshKey ($user, $title): void
+	public function deleteSshKey (string $user, string $title): void
 	{
 		$e = new Exception('');
 		$e->set('user', $user);
@@ -315,7 +315,7 @@ class Gitolite
 	 * @param SimpleXmlElement $config The config xml.
 	 * @return string The gitolite config.
 	 */
-	public static function configFromXml (\SimpleXmlElement $config): string
+	public static function configFromXml (\gimle\git\SimpleXmlElement $config): string
 	{
 		$return = '';
 
